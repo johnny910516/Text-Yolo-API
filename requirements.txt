@@ -1,0 +1,11 @@
+flask>=3.0.3
+flask-classful>=0.16.0
+numpy>=1.26.3
+tqdm>=4.66.5
+requests>=2.32.3
+opencv-python>=4.10.0.84
+Pillow>=10.2.0
+scipy>=1.14.1
+ultralytics>=8.3.153
+
+
