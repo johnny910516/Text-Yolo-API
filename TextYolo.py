@@ -286,6 +286,37 @@ class TextYolo():
             iou_matrix[:, j] = -1
 
         return list(unmatched_A_idx)
+    
+    def text_combine_textbox(self, args, sort_text_coordinate, sort_textbox_coordinate):
+        text_textbox_coordinate = []
+
+        for i in range(args.row):
+            textbox_list = sort_textbox_coordinate[args.column*i:args.column*(i+1)]
+            text_list = sort_text_coordinate[:args.column+5]
+
+            all_A_points = np.vstack(textbox_list) 
+            min_x, min_y = np.min(all_A_points, axis=0)
+            max_x, max_y = np.max(all_A_points, axis=0)
+
+            points_in_range = []
+            for text in text_list:
+                poly_pts = np.array(text)
+                if np.all((poly_pts[:,0] >= min_x) & (poly_pts[:,0] <= max_x) & (poly_pts[:,1] >= min_y) & (poly_pts[:,1] <= max_y)):
+                    points_in_range.append(text)
+
+            sort_text_coordinate = [a for a in sort_text_coordinate if not any(np.array_equal(a, b) for b in points_in_range)]
+
+            unmatched_A_idx = self.match_iou_max_no_threshold(textbox_list, points_in_range)
+
+            points_in_range_index = 0
+            for insert_index in range(args.column):
+                if insert_index in unmatched_A_idx:
+                    text_textbox_coordinate.append(textbox_list[insert_index].astype(np.int32))
+                else:
+                    text_textbox_coordinate.append(points_in_range[points_in_range_index].astype(np.int32))
+                    points_in_range_index+=1
+            
+        return text_textbox_coordinate
 
     def insert_paragraph_mark(self, args, image_index, sort_text_coordinate, sort_textbox_coordinate):
         new_sort_text_coordinate = []
@@ -370,7 +401,7 @@ class TextYolo():
 
         return sort_text_coordinate
 
-    def saveResult(self, args, image_index, image_amount, txt_content, htr_model, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, split_path, post_process_split_path):
+    def saveResult(self, args, image_index, image_amount, txt_content, htr_model, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, text_textbox_split_path, split_path, post_process_split_path):
         draw_text_image = image.copy()
         split_image = image.copy()
         insert_caret_point_image = image.copy()
@@ -393,11 +424,17 @@ class TextYolo():
 
         text_coordinate = self.search_caret_coordinate_insert_position(insert_caret_point_image, new_sort_text_coordinate, caret_dict, insert_caret_point_path)
 
+        text_textbox_coordinate = self.text_combine_textbox(args, sort_text_coordinate, sort_textbox_coordinate)
+
+        text_textbox_coordinate = self.search_caret_coordinate_insert_position(insert_caret_point_image, text_textbox_coordinate, caret_dict, insert_caret_point_path)
+
         for i, poly in enumerate(text_coordinate, 1):
             if isinstance(poly, str):
                 continue
             cv2.polylines(draw_text_image, [poly.reshape((-1, 1, 2))], True, color=(0, 0, 255), thickness=2)
             cv2.putText(draw_text_image, str(i), (poly[1][0] - 3, poly[1][1] + 3), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
+
+        _ = self.split(text_textbox_coordinate, split_image, text_textbox_split_path)
 
         image_list = self.split(text_coordinate, split_image, split_path)
 
@@ -794,6 +831,7 @@ class TextYolo():
         parser.add_argument('--text_output', default='text', type=str, help='文字檢測輸出路徑') 
         parser.add_argument('--caret_output', default='caret', type=str, help='插入字符檢測輸出路徑') 
         parser.add_argument('--caret_mark_output', default='caret mark', type=str, help='插入符號檢測輸出路徑') 
+        parser.add_argument('--text_textbox_split_output', default='text textbox split', type=str, help='切割文字集空白輸出路徑') 
         parser.add_argument('--split_output', default='split', type=str, help='切割文字輸出路徑') 
         parser.add_argument('--post_procss_split_output', default='post process split', type=str, help='後處理切割文字輸出路徑') 
         parser.add_argument('--htr_output', default='htr', type=str, help='手寫字辨識輸出路徑') 
@@ -815,6 +853,10 @@ class TextYolo():
         output_path = os.path.join(args.output, filename)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
+
+        text_textbox_split_path = os.path.join(args.output, filename, args.text_textbox_split_output)
+        if not os.path.exists(text_textbox_split_path):
+            os.makedirs(text_textbox_split_path)
 
         split_path = os.path.join(args.output, filename, args.split_output)
         if not os.path.exists(split_path):
@@ -842,7 +884,7 @@ class TextYolo():
 
         text_coordinate, caret_text_coordinate = self.filter_coordinate(all_text_coordinate, caret_dict)
 
-        self.saveResult(args, image_index, image_amount, txt_content, htr_model, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, split_path, post_process_split_path)
+        self.saveResult(args, image_index, image_amount, txt_content, htr_model, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, text_textbox_split_path, split_path, post_process_split_path)
 
         return {'success': True}
 
