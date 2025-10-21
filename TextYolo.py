@@ -286,40 +286,13 @@ class TextYolo():
             iou_matrix[:, j] = -1
 
         return list(unmatched_A_idx)
-    
-    def text_combine_textbox(self, args, sort_text_coordinate, sort_textbox_coordinate):
-        text_textbox_coordinate = []
 
-        for i in range(args.row):
-            textbox_list = sort_textbox_coordinate[args.column*i:args.column*(i+1)]
-            text_list = sort_text_coordinate[:args.column+5]
-
-            all_A_points = np.vstack(textbox_list) 
-            min_x, min_y = np.min(all_A_points, axis=0)
-            max_x, max_y = np.max(all_A_points, axis=0)
-
-            points_in_range = []
-            for text in text_list:
-                poly_pts = np.array(text)
-                if np.all((poly_pts[:,0] >= min_x) & (poly_pts[:,0] <= max_x) & (poly_pts[:,1] >= min_y) & (poly_pts[:,1] <= max_y)):
-                    points_in_range.append(text)
-
-            sort_text_coordinate = [a for a in sort_text_coordinate if not any(np.array_equal(a, b) for b in points_in_range)]
-
-            unmatched_A_idx = self.match_iou_max_no_threshold(textbox_list, points_in_range)
-
-            points_in_range_index = 0
-            for insert_index in range(args.column):
-                if insert_index in unmatched_A_idx:
-                    text_textbox_coordinate.append(textbox_list[insert_index].astype(np.int32))
-                else:
-                    text_textbox_coordinate.append(points_in_range[points_in_range_index].astype(np.int32))
-                    points_in_range_index+=1
-            
-        return text_textbox_coordinate
-
-    def insert_paragraph_mark(self, args, image_index, sort_text_coordinate, sort_textbox_coordinate):
+    def insert_paragraph_mark(self, args, image_index, image_amount, sort_text_coordinate, sort_textbox_coordinate):
         new_sort_text_coordinate = []
+        text_textbox_coordinate = []
+        post_textbox_list = []
+        post_points_in_range= []
+        post_unmatched_A_idx = []
 
         for i in range(args.row):
             textbox_list = sort_textbox_coordinate[args.column*i:args.column*(i+1)]
@@ -339,42 +312,114 @@ class TextYolo():
 
             unmatched_A_idx = self.match_iou_max_no_threshold(textbox_list, points_in_range)
 
+            #如果整個直排空白
             if set(unmatched_A_idx) == set(range(args.column)):
                 new_sort_text_coordinate.extend(['*', '*']) 
                 break
-
+            
+            #第一張影像的第一直排先跳過
             if image_index == 0 and i == 0:
                 pass
+            #用第一張影像的第二直排判斷第一直是否為標題
             elif image_index == 0 and i == 1:
-                if {0, 1}.issubset(set(unmatched_A_idx)):
+                if set(unmatched_A_idx) == {0, 1}:
+                    new_sort_text_coordinate.extend(post_points_in_range)
                     new_sort_text_coordinate.extend(['@', '@', '\n', ' ', ' ', ' ', ' ']) 
+                    text_textbox_coordinate.extend(post_points_in_range)
+                    text_textbox_coordinate.extend([textbox_list[0], textbox_list[1]])
+                elif {0, 1}.issubset(unmatched_A_idx):
+                    new_sort_text_coordinate.extend(post_points_in_range)
+                    new_sort_text_coordinate.extend(['@', '@', '\n']) 
+                    text_textbox_coordinate.extend(post_points_in_range)
+                    points_in_range_index = 0
+                    flag1 = False
+                    for insert_index in range(args.column):
+                        if insert_index in unmatched_A_idx and not flag1:
+                            new_sort_text_coordinate.extend([' ', ' '])
+                            text_textbox_coordinate.append(textbox_list[insert_index])
+                        else:
+                            new_sort_text_coordinate.append(points_in_range[points_in_range_index])
+                            text_textbox_coordinate.append(points_in_range[points_in_range_index])
+                            points_in_range_index+=1
+                            if len(points_in_range) == points_in_range_index:
+                                flag1 = True
+                    continue
                 else:
-                    for insert_index in range(4):
-                        new_sort_text_coordinate.insert(insert_index, ' ')
-            elif set(unmatched_A_idx) == {0}:
-                    new_sort_text_coordinate.extend(['#', '#']) 
-                    new_sort_text_coordinate.append('\n')
-                    new_sort_text_coordinate.extend([' ', ' ']) 
+                    if len(post_unmatched_A_idx) != 0 and set(post_unmatched_A_idx) != set(range(post_unmatched_A_idx[0], args.column)):
+                        points_in_range_index = 0
+                        flag1 = False
+                        for insert_index in range(args.column):
+                            if insert_index in post_unmatched_A_idx and not flag1:
+                                new_sort_text_coordinate.extend([' ', ' '])
+                                text_textbox_coordinate.append(post_textbox_list[insert_index])
+                            else:
+                                new_sort_text_coordinate.append(post_points_in_range[points_in_range_index])
+                                text_textbox_coordinate.append(post_points_in_range[points_in_range_index])
+                                points_in_range_index+=1
+                                if len(post_points_in_range) == points_in_range_index:
+                                    flag1 = True
+                    else:
+                        for insert_index in range(4):
+                            new_sort_text_coordinate.insert(insert_index, ' ')
+                        for insert_index in range(2):   
+                            text_textbox_coordinate.insert(insert_index, post_textbox_list[insert_index])
+                        text_textbox_coordinate.extend(post_points_in_range)
+                    if len(unmatched_A_idx) != 0 and set(unmatched_A_idx) != set(range(unmatched_A_idx[0], args.column)): 
+                        points_in_range_index = 0
+                        flag1 = False
+                        for insert_index in range(args.column):
+                            if insert_index in unmatched_A_idx and not flag1:
+                                new_sort_text_coordinate.extend([' ', ' '])
+                                text_textbox_coordinate.append(textbox_list[insert_index])
+                            else:
+                                new_sort_text_coordinate.append(points_in_range[points_in_range_index])
+                                text_textbox_coordinate.append(points_in_range[points_in_range_index])
+                                points_in_range_index+=1
+                                if len(points_in_range) == points_in_range_index:
+                                    flag1 = True
+                        continue
+                    else:
+                        text_textbox_coordinate.extend(points_in_range)
+            #確定是段落開頭
             elif set(unmatched_A_idx) == {0, 1}:
                     new_sort_text_coordinate.extend(['#', '#']) 
                     new_sort_text_coordinate.append('\n')
                     new_sort_text_coordinate.extend([' ', ' ', ' ', ' ']) 
+                    text_textbox_coordinate.extend([textbox_list[0], textbox_list[0]])
+            #缺字
             elif len(unmatched_A_idx) != 0 and set(unmatched_A_idx) != set(range(unmatched_A_idx[0], args.column)): 
                 points_in_range_index = 0
+                flag1 = False
+                flag2 = False
                 for insert_index in range(args.column):
                     if insert_index in unmatched_A_idx:
-                        if insert_index in [0]:
+                        if {0, 1}.issubset(unmatched_A_idx) and not flag1:
                             new_sort_text_coordinate.extend(['#', '#']) 
                             new_sort_text_coordinate.append('\n')
-                        new_sort_text_coordinate.extend([' ', ' '])
+                            flag1 = True
+                        if not flag2:
+                            new_sort_text_coordinate.extend([' ', ' '])
+                            text_textbox_coordinate.append(textbox_list[insert_index])
                     else:
                         new_sort_text_coordinate.append(points_in_range[points_in_range_index])
+                        text_textbox_coordinate.append(points_in_range[points_in_range_index])
                         points_in_range_index+=1
+                        if len(points_in_range) == points_in_range_index:
+                            flag2 = True
                 continue
 
-            new_sort_text_coordinate.extend(points_in_range)
+            if not (image_index == 0 and i == 0):
+                new_sort_text_coordinate.extend(points_in_range)
+                text_textbox_coordinate.extend(points_in_range)
+            post_textbox_list.extend(textbox_list)
+            post_points_in_range.extend(points_in_range)
+            post_unmatched_A_idx.extend(unmatched_A_idx)
 
-        return new_sort_text_coordinate 
+        #如果整張影像寫滿
+        if image_index == (image_amount-1) and i == args.row-1 and not isinstance(new_sort_text_coordinate[-1], str) and not isinstance(new_sort_text_coordinate[-2], str):
+            new_sort_text_coordinate.extend(['*', '*']) 
+
+        return new_sort_text_coordinate, text_textbox_coordinate
     
     def sort_text(self, args, sort_textbox_coordinate, text_coordinates):
         sort_text_coordinate = []
@@ -420,11 +465,16 @@ class TextYolo():
 
         sort_text_coordinate = self.sort_text(args, sort_textbox_coordinate, text_coordinates)
 
-        new_sort_text_coordinate = self.insert_paragraph_mark(args, image_index, sort_text_coordinate, sort_textbox_coordinate)
+        new_sort_text_coordinate, text_textbox_coordinates = self.insert_paragraph_mark(args, image_index, image_amount, sort_text_coordinate, sort_textbox_coordinate)
+
+        text_textbox_coordinate = []
+
+        for i, coordinate in enumerate(text_textbox_coordinates):
+            coordinate = np.array(coordinate).astype(np.int32).reshape((-1))
+            coordinate = coordinate.reshape(-1, 2)
+            text_textbox_coordinate.append(coordinate)
 
         text_coordinate = self.search_caret_coordinate_insert_position(insert_caret_point_image, new_sort_text_coordinate, caret_dict, insert_caret_point_path)
-
-        text_textbox_coordinate = self.text_combine_textbox(args, sort_text_coordinate, sort_textbox_coordinate)
 
         text_textbox_coordinate = self.search_caret_coordinate_insert_position(insert_caret_point_image, text_textbox_coordinate, caret_dict, insert_caret_point_path)
 
@@ -434,9 +484,9 @@ class TextYolo():
             cv2.polylines(draw_text_image, [poly.reshape((-1, 1, 2))], True, color=(0, 0, 255), thickness=2)
             cv2.putText(draw_text_image, str(i), (poly[1][0] - 3, poly[1][1] + 3), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
 
-        _ = self.split(text_textbox_coordinate, split_image, text_textbox_split_path)
-
         image_list = self.split(text_coordinate, split_image, split_path)
+
+        _ = self.split(text_textbox_coordinate, split_image, text_textbox_split_path)
 
         average_resolution = self.check_split_word_resolution(image_list)
 

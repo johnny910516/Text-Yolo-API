@@ -1,5 +1,5 @@
-column: 18 #直排字數
-row: 20 #橫排字數
-phone_image: True #是否為手機拍攝影像
-ignore_text: True #是否具有"請從本行開始作答"的文字，如 example.jpg
+column: 22 #直排字數
+row: 23 #橫排字數
+phone_image: False #是否為手機拍攝影像
+ignore_text: False #是否具有"請從本行開始作答"的文字，如 example.jpg
 
