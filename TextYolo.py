@@ -305,7 +305,7 @@ class TextYolo():
             points_in_range = []
             for text in text_list:
                 poly_pts = np.array(text)
-                if np.all((poly_pts[:,0] >= min_x) & (poly_pts[:,0] <= max_x) & (poly_pts[:,1] >= min_y) & (poly_pts[:,1] <= max_y)):
+                if np.all((poly_pts[:,0] >= min_x-10) & (poly_pts[:,0] <= max_x+10)): #& (poly_pts[:,1] >= min_y-10) & (poly_pts[:,1] <= max_y+10)
                     points_in_range.append(text)
 
             sort_text_coordinate = [a for a in sort_text_coordinate if not any(np.array_equal(a, b) for b in points_in_range)]
@@ -313,7 +313,7 @@ class TextYolo():
             unmatched_A_idx = self.match_iou_max_no_threshold(textbox_list, points_in_range)
 
             #如果整個直排空白
-            if set(unmatched_A_idx) == set(range(args.column)):
+            if set(unmatched_A_idx) == set(range(args.column)) and len(sort_text_coordinate) == 0:
                 new_sort_text_coordinate.extend(['*', '*']) 
                 break
             
@@ -334,7 +334,7 @@ class TextYolo():
                     points_in_range_index = 0
                     flag1 = False
                     for insert_index in range(args.column):
-                        if insert_index in unmatched_A_idx and not flag1:
+                        if insert_index in unmatched_A_idx:
                             new_sort_text_coordinate.extend([' ', ' '])
                             text_textbox_coordinate.append(textbox_list[insert_index])
                         else:
@@ -349,7 +349,7 @@ class TextYolo():
                         points_in_range_index = 0
                         flag1 = False
                         for insert_index in range(args.column):
-                            if insert_index in post_unmatched_A_idx and not flag1:
+                            if insert_index in post_unmatched_A_idx:
                                 new_sort_text_coordinate.extend([' ', ' '])
                                 text_textbox_coordinate.append(post_textbox_list[insert_index])
                             else:
@@ -368,7 +368,7 @@ class TextYolo():
                         points_in_range_index = 0
                         flag1 = False
                         for insert_index in range(args.column):
-                            if insert_index in unmatched_A_idx and not flag1:
+                            if insert_index in unmatched_A_idx:
                                 new_sort_text_coordinate.extend([' ', ' '])
                                 text_textbox_coordinate.append(textbox_list[insert_index])
                             else:
@@ -397,9 +397,8 @@ class TextYolo():
                             new_sort_text_coordinate.extend(['#', '#']) 
                             new_sort_text_coordinate.append('\n')
                             flag1 = True
-                        if not flag2:
-                            new_sort_text_coordinate.extend([' ', ' '])
-                            text_textbox_coordinate.append(textbox_list[insert_index])
+                        new_sort_text_coordinate.extend([' ', ' '])
+                        text_textbox_coordinate.append(textbox_list[insert_index])
                     else:
                         new_sort_text_coordinate.append(points_in_range[points_in_range_index])
                         text_textbox_coordinate.append(points_in_range[points_in_range_index])
@@ -436,7 +435,7 @@ class TextYolo():
             points_in_range = []
             for text in text_list:
                 poly_pts = np.array(text)
-                if np.all((poly_pts[:,0] >= min_x) & (poly_pts[:,0] <= max_x) & (poly_pts[:,1] >= min_y) & (poly_pts[:,1] <= max_y)):
+                if np.all((poly_pts[:,0] >= min_x-10) & (poly_pts[:,0] <= max_x+10)):
                     points_in_range.append(text)
 
             text_coordinates = [a for a in text_coordinates if not any(np.array_equal(a, b) for b in points_in_range)]
@@ -790,24 +789,25 @@ class TextYolo():
     def rotate_image(self, args, angle_model, image_path):
         image = cv2.imread(image_path, cv2.COLOR_GRAY2BGR) 
 
-        results = angle_model(image, imgsz=args.angle_size, device=DEVICE, verbose=False)
+        if args.phone_image:
+            results = angle_model(image, imgsz=args.angle_size, device=DEVICE, verbose=False)
 
-        for result in results:
-            probs = result.probs  
-            pred_idx = probs.top1  
-            confidence = probs.data[pred_idx].item()  
-            class_name = angle_model.names[pred_idx]  
+            for result in results:
+                probs = result.probs  
+                pred_idx = probs.top1  
+                confidence = probs.data[pred_idx].item()  
+                class_name = angle_model.names[pred_idx]  
 
-        image = np.array(image)
+            image = np.array(image)
 
-        if class_name == 'rotate0':
-            pass
-        elif class_name == 'rotate90':
-            image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        elif class_name == 'rotate180':
-            image = cv2.rotate(image, cv2.ROTATE_180)
-        elif class_name == 'rotate270':
-            image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
+            if class_name == 'rotate0':
+                pass
+            elif class_name == 'rotate90':
+                image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            elif class_name == 'rotate180':
+                image = cv2.rotate(image, cv2.ROTATE_180)
+            elif class_name == 'rotate270':
+                image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
 
         return image
     
@@ -862,8 +862,7 @@ class TextYolo():
         parser.add_argument('--htr_weight', default=r'./weight/htr.pt', type=str, help='手寫字辨識模型權重')
         parser.add_argument('--textbox_weight', default=r'./weight/textbox.pt', type=str, help='空白檢測模型權重')
 
-        #測試模式旗標
-        parser.add_argument('--test_mode', default=False, type=bool, help='是否使用測試模式，若開啟會將切割文字解析度較低的影像過濾不做') 
+        #測試模式閾值
         parser.add_argument('--resoultion_threshold', default=23, type=int, help='切割文字解析度閾值(若test_mode為True則會將切割文字平均解析度低於閾值的影像過濾不做)') 
 
         #模型參數
@@ -896,7 +895,7 @@ class TextYolo():
         args.column = data['column']
         args.row = data['row']
         args.phone_image = data['phone_image']
-        args.ignore_text = data['ignore_text']
+        args.test_mode = data['test_mode']
 
         angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, htr_model, textbox_model = self.load_model(args)
 
@@ -925,7 +924,7 @@ class TextYolo():
 
         caret_dict = self.caret_mark_detection(args, caret_mark_model, caret_dict, caret_output, output_path)
         
-        if args.ignore_text:
+        if args.phone_image:
             image = self.ignore_text_detection(args, ignore_model, image, filename)
 
         sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename)

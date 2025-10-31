@@ -1,5 +1,5 @@
 column: 22 #直排字數
 row: 23 #橫排字數
-phone_image: False #是否為手機拍攝影像
-ignore_text: False #是否具有"請從本行開始作答"的文字，如 example.jpg
+phone_image: False #是否為範例影像(example)相同的稿紙
+test_mode: True #是否開啟測試模式(若開啟會將切割文字平均解析度低於閾值的影像過濾)
 
