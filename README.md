@@ -2,13 +2,19 @@
 
 Tetx Yolo API的Web API服務，稿紙文字檢測、文字辨識功能。
 
-## 輸入\出資料路徑
+## 輸入資料路徑
 輸入影像路徑: ./input
-輸出影像及文字檔路徑: ./output
 
-注意!!! 注意!!! 注意!!!
+## 輸出資料路徑
+輸出影像及文字檔路徑: ./output
+輸出切割影像路徑(包含空格): ./output/影像檔名/text textbox split
+輸出切割影像路徑(不包含空格): ./output/影像檔名/split
+
+## 注意!!! 注意!!! 注意!!!
 每次呼叫Text Yolo API時必須輸入同一份稿紙的影像，
-若不同份稿紙的影像同時輸入會造成文字檔內容錯誤。
+假設同學A的作文寫了兩張稿紙，則必須同時將兩張稿紙
+影像一起放入輸入影像路徑的資料夾中進行處理，若不同
+份稿紙的影像同時輸入會造成輸出文字檔內容錯誤。
 
 ## 安裝與設置
 
@@ -22,7 +28,7 @@ Tetx_Yolo_API\Scripts\activate
 
 ### 2. 安裝依賴
 ```bash
-pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+pip3 install --pre torch torchvision torchaudio --inde`x-url https://download.pytorch.org/whl/nightly/cu128
 pip install -r requirements.txt
 ```
 
