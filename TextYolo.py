@@ -187,6 +187,7 @@ class TextYolo():
 
                 min_dist = float('inf')
                 insert_index = None
+                insert_poly = None
 
                 for i, poly in enumerate(new_sort_text_coordinate):
                     if isinstance(poly, str):
@@ -201,7 +202,11 @@ class TextYolo():
                     dist = np.linalg.norm(np.array([x_insert_position, y_insert_position]) - np.array([br_x, br_y]))
                     if dist < min_dist:
                         min_dist = dist
+                        insert_poly = poly
                         insert_index = i
+                
+                if y_insert_position < insert_poly[0][1]:
+                    insert_index -= 1
 
                 for caret_text_coordinate in caret_text_coordinates:
                     insert_index += 1
@@ -217,6 +222,7 @@ class TextYolo():
 
                 min_dist = float('inf')
                 insert_index = None
+                insert_poly = None
 
                 for i, poly in enumerate(new_sort_text_coordinate):
                     if isinstance(poly, str):
@@ -231,7 +237,11 @@ class TextYolo():
                     dist = np.linalg.norm(np.array([x_insert_position, y_insert_position]) - np.array([bl_x, bl_y]))
                     if dist < min_dist:
                         min_dist = dist
+                        insert_poly = poly
                         insert_index = i
+
+                if y_insert_position < insert_poly[0][1]:
+                    insert_index -= 1
 
                 for caret_text_coordinate in caret_text_coordinates:
                     insert_index += 1
