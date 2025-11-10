@@ -19,6 +19,7 @@ Tetx Yolo API的Web API服務，稿紙文字檢測、文字辨識功能。
 ## 安裝與設置
 
 ### 1. 創建虛擬環境
+python version: 3.12.4
 ```bash
 python -m venv Tetx_Yolo_API
 ```
