@@ -2,18 +2,16 @@ import cv2
 import numpy as np
 from PIL import Image
 import os
-import yaml
 from PIL import Image
+import argparse
 from scipy.spatial import distance
 import os
-import argparse
 import cv2
 import numpy as np
+from collections import OrderedDict
 from ultralytics import YOLO
-
-import torch
-
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+import yaml
+from pathlib import Path
 
 class TextYolo():    
     def split_txt_by_threshold(self, input_file, threshold):
@@ -51,7 +49,7 @@ class TextYolo():
         with open(os.path.join(output_path, f'{filename}.txt'), 'w', encoding='utf-8') as file:
             file.write(text)
     
-    def htr(self, args, htr_model, htr_image, txt_content, DEVICE):
+    def htr(self, args, htr_model, htr_image, txt_content, device):
         if isinstance(htr_image, str):
             txt_content[0] += htr_image
             return txt_content
@@ -59,7 +57,7 @@ class TextYolo():
         try:
             predictions = htr_model.predict(
                 source=htr_image,
-                device=DEVICE,
+                device=device,
                 verbose=False,
                 imgsz=args.htr_size,
                 save=False
@@ -78,11 +76,11 @@ class TextYolo():
 
     def split_postprocesser(self, image_list, post_process_split_path):
         index = 0
-        post_process_image_list = []
+        post_process_image_path_list = []
 
         for pil_image in image_list:
             if isinstance(pil_image, str):
-                post_process_image_list.append(pil_image)
+                post_process_image_path_list.append(pil_image)
                 continue
             image = np.array(pil_image)
             gray_img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
@@ -120,9 +118,9 @@ class TextYolo():
             cv2.imwrite(f"{post_process_split_path}/{name}.jpg", htr_input_img)
             index += 1
 
-            post_process_image_list.append(Image.fromarray(htr_input_img))
+            post_process_image_path_list.append(f"{post_process_split_path}/{name}.jpg")
 
-        return post_process_image_list
+        return post_process_image_path_list
 
     def check_split_word_resolution(self, image_list):
         resolution_list = []
@@ -610,9 +608,8 @@ class TextYolo():
 
         return sort_text_coordinate
 
-    def saveResult(self, args, image_index, image_amount, txt_content, htr_model, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, text_textbox_split_path, split_path, post_process_split_path):
+    def saveResult(self, args, image_index, image_amount, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, split_path, text_textbox_split_path, post_process_split_path):
         draw_text_image = image.copy()
-        split_image = image.copy()
         insert_caret_point_image = image.copy()
 
         filename, file_ext = os.path.splitext(os.path.basename(image_path))
@@ -645,44 +642,22 @@ class TextYolo():
 
         text_textbox_coordinate = self.search_caret_coordinate_insert_position(insert_caret_point_image, text_textbox_coordinate, caret_dict, insert_caret_point_path)
 
+        split_image = image.copy()
+        image_list = self.split(text_coordinate, split_image, split_path)
+
+        _ = self.split(text_textbox_coordinate, split_image, text_textbox_split_path)
+
+        post_process_image_path_list = self.split_postprocesser(image_list, post_process_split_path)
+
         for i, poly in enumerate(text_coordinate, 1):
             if isinstance(poly, str):
                 continue
             cv2.polylines(draw_text_image, [poly.reshape((-1, 1, 2))], True, color=(255, 0, 0), thickness=2)
             cv2.putText(draw_text_image, str(i), (poly[1][0] - 3, poly[1][1] + 3), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
 
-        image_list = self.split(text_coordinate, split_image, split_path)
-
-        _ = self.split(text_textbox_coordinate, split_image, text_textbox_split_path)
-
-        post_process_image_list = self.split_postprocesser(image_list, post_process_split_path)
-
-        if args.test_mode:
-            average_resolution = self.check_split_word_resolution(image_list)
-            if average_resolution > args.resoultion_threshold:
-                for htr_image in post_process_image_list:
-                    txt_content = self.htr(args, htr_model, htr_image, txt_content, DEVICE)
-                if image_index == image_amount-1:
-                    self.write_txt(txt_content[0], args.output, filename)
-                
-                if args.high_school_format:
-                    self.split_txt_by_threshold(os.path.join(args.output, f'{filename}.txt'), args.column)
-            else:
-                print(f"-----{filename}{file_ext}-----")
-                print(f'平均解析度: {average_resolution}')
-                print("解析度不足!!!")
-                print("請重新拍攝!!!")
-                print()
-        else:
-            for htr_image in post_process_image_list:
-                txt_content = self.htr(args, htr_model, htr_image, txt_content, DEVICE)
-            if image_index == image_amount-1:
-                self.write_txt(txt_content[0], args.output, filename)
-
-            if args.high_school_format:
-                self.split_txt_by_threshold(os.path.join(args.output, f'{filename}.txt'), args.column)
-            
         cv2.imwrite(text_path, draw_text_image)
+
+        return post_process_image_path_list
 
     def filter_coordinate(self, all_text_coordinate, caret_dict, overlap_thresh=0.8):
         caret_text_coordinates = []
@@ -722,11 +697,11 @@ class TextYolo():
 
         return np.array(text_coordinates, dtype=np.float32), np.array(caret_text_coordinates, dtype=np.float32)
 
-    def text_detection(self, args, text_model, image, output_path, filename):
+    def text_detection(self, args, text_model, image, output_path, filename, device):
         boxes = []
         image = image.copy()
 
-        results = text_model(image, imgsz=args.text_size, max_det=2000, iou=0.3, device=DEVICE, verbose=False)
+        results = text_model(image, imgsz=args.text_size, max_det=2000, iou=0.3, device=device, verbose=False)
         
         result = results[0]
         for box in result.boxes:
@@ -752,8 +727,8 @@ class TextYolo():
 
         return sort_textbox
 
-    def ignore_text_detection(self, args, ignore_model, image, filename):
-        results = ignore_model(image, imgsz=args.ignore_size, max_det=1, device=DEVICE, verbose=False)
+    def ignore_text_detection(self, args, ignore_model, image, filename, device):
+        results = ignore_model(image, imgsz=args.ignore_size, max_det=1, device=device, verbose=False)
         
         result = results[0]
         if len(result.boxes) != 0:
@@ -787,7 +762,7 @@ class TextYolo():
 
         return image
 
-    def caret_mark_detection(self, args, caret_mark_model, caret_dict, caret_output, output_path):
+    def caret_mark_detection(self, args, caret_mark_model, caret_dict, caret_output, output_path, device):
         caret_mark_output = os.path.join(output_path, args.caret_mark_output)
         if not os.path.exists(caret_mark_output):
             os.makedirs(caret_mark_output)
@@ -798,7 +773,7 @@ class TextYolo():
             image = cv2.imread(image_path)
             draw_image = image.copy()
 
-            results = caret_mark_model(image, imgsz=args.caret_mark_size, device=DEVICE, verbose=False, max_det=1)
+            results = caret_mark_model(image, imgsz=args.caret_mark_size, device=device, verbose=False, max_det=1)
             
             result = results[0]
 
@@ -821,13 +796,13 @@ class TextYolo():
             
         return caret_dict
 
-    def caret_detection(self, args, caret_model, image, output_path, filename):
+    def caret_detection(self, args, caret_model, image, output_path, filename, device):
         caret_output = os.path.join(output_path, args.caret_output)
         if not os.path.exists(caret_output):
             os.makedirs(caret_output)
 
         draw_image = image.copy()
-        results = caret_model(image, imgsz=args.caret_size, device=DEVICE, verbose=False, max_det=2000) 
+        results = caret_model(image, imgsz=args.caret_size, device=device, verbose=False, max_det=2000) 
         
         caret_coordinate = []
         caret_dict = {}
@@ -892,11 +867,11 @@ class TextYolo():
 
         return warped
     
-    def textbox_detection(self, args, empty_model, image, output_path, filename):
+    def textbox_detection(self, args, empty_model, image, output_path, filename, device):
         boxes = []
         image = image.copy()
 
-        results = empty_model(image, imgsz=args.textbox_size, max_det=2000, iou=0.4, device=DEVICE, verbose=False)
+        results = empty_model(image, imgsz=args.textbox_size, max_det=2000, iou=0.4, device=device, verbose=False)
         
         result = results[0]
         for box in result.boxes:
@@ -924,7 +899,7 @@ class TextYolo():
 
         return sort_textbox_coordinate
 
-    def phone_papper_stretch(self, args, phone_papper_model, image, filename):
+    def phone_papper_stretch(self, args, phone_papper_model, image, filename, device):
         def get_nearest_points(mask, rect_pts):
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if not contours:
@@ -952,7 +927,7 @@ class TextYolo():
 
             return rect
         
-        results = phone_papper_model(image, imgsz=args.phone_papper_size, max_det=1, device=DEVICE, verbose=False)
+        results = phone_papper_model(image, imgsz=args.phone_papper_size, max_det=1, device=device, verbose=False)
         result = results[0]
 
         masks = result.masks.data.cpu().numpy()
@@ -1001,8 +976,8 @@ class TextYolo():
 
         return warped
 
-    def rotate_image(self, args, angle_model, image):
-        results = angle_model(image, imgsz=args.angle_size, device=DEVICE, verbose=False)
+    def rotate_image(self, args, angle_model, image, device):
+        results = angle_model(image, imgsz=args.angle_size, device=device, verbose=False)
 
         for result in results:
             probs = result.probs  
@@ -1032,26 +1007,24 @@ class TextYolo():
 
         return image_paths
 
-    def load_model(self, args):
+    def load_model(self, args, project_root):
         print('Load model...')
 
-        angle_model = YOLO(args.angle_weight)
+        angle_model = YOLO(project_root/args.angle_weight)
 
-        phone_papper_model = YOLO(args.phone_papper_weight)
+        phone_papper_model = YOLO(project_root/args.phone_papper_weight)
 
-        caret_model = YOLO(args.caret_weight)
+        caret_model = YOLO(project_root/args.caret_weight)
 
-        caret_mark_model = YOLO(args.caret_mark_weight)
+        caret_mark_model = YOLO(project_root/args.caret_mark_weight)
 
-        ignore_model = YOLO(args.ignore_weight)
+        ignore_model = YOLO(project_root/args.ignore_weight)
 
-        text_model = YOLO(args.text_weight)
+        text_model = YOLO(project_root/args.text_weight)
 
-        htr_model = YOLO(args.htr_weight)
+        textbox_model = YOLO(project_root/args.textbox_weight)
 
-        textbox_model = YOLO(args.textbox_weight)
-
-        return angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, htr_model, textbox_model
+        return angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, textbox_model
 
     def load_papper_config(self, config_path):
         with open(config_path, "r", encoding="utf-8") as f:
@@ -1071,7 +1044,6 @@ class TextYolo():
         parser.add_argument('--caret_mark_weight', default=r'./weight/caret_mark.pt', type=str, help='插入符號檢測模型權重')
         parser.add_argument('--ignore_weight', default=r'./weight/ignore.pt', type=str, help='忽略字檢測模型權重')
         parser.add_argument('--text_weight', default=r'./weight/text.pt', type=str, help='文字檢測模型權重')
-        parser.add_argument('--htr_weight', default=r'./weight/htr.pt', type=str, help='手寫字辨識模型權重')
         parser.add_argument('--textbox_weight', default=r'./weight/textbox.pt', type=str, help='空白檢測模型權重')
 
         #測試模式閾值
@@ -1084,7 +1056,6 @@ class TextYolo():
         parser.add_argument("--caret_mark_size", type=int, default=64, help="插入符號檢測影像縮放尺寸")
         parser.add_argument('--ignore_size', default=1280, type=int, help='忽略字檢測影像縮放尺寸') 
         parser.add_argument('--text_size', default=1280, type=int, help='文字檢測影像縮放尺寸') 
-        parser.add_argument("--htr_size", type=int, default=64, help="手寫字辨識影像縮放尺寸")
         parser.add_argument("--textbox_size", type=int, default=1280, help="空白檢測影像縮放尺寸")
 
         #影像輸入/輸出路徑
@@ -1095,63 +1066,67 @@ class TextYolo():
         parser.add_argument('--text_textbox_split_output', default='text textbox split', type=str, help='切割文字集空白輸出路徑') 
         parser.add_argument('--split_output', default='split', type=str, help='切割文字輸出路徑') 
         parser.add_argument('--post_procss_split_output', default='post process split', type=str, help='後處理切割文字輸出路徑') 
-        parser.add_argument('--htr_output', default='htr', type=str, help='手寫字辨識輸出路徑') 
 
         return parser.parse_args()
 
-    def predict(self, image_path, image_index, image_amount, filename, txt_content):
-        args = self.get_argparse()
+    def predict(self, image_path, image_index, image_amount, filename, device):
+        current_dir = Path(__file__).resolve().parent 
+        project_root = current_dir.parents[2]  
 
-        data = self.load_papper_config(args.papper_config)
+        args = self.get_argparse()
+        data = self.load_papper_config(project_root/args.papper_config)
 
         args.column = data['column']
         args.row = data['row']
         args.example_format = data['example format']
         args.high_school_format = data['high school format']
         args.test_mode = data['test mode']
+        
+        angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, textbox_model = self.load_model(args, project_root)
 
-        angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, htr_model, textbox_model = self.load_model(args)
-
-        output_path = os.path.join(args.output, filename)
+        output_path = os.path.join(project_root/args.output, filename)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
 
-        text_textbox_split_path = os.path.join(args.output, filename, args.text_textbox_split_output)
+        text_textbox_split_path = os.path.join(project_root/args.output, filename, args.text_textbox_split_output)
         if not os.path.exists(text_textbox_split_path):
             os.makedirs(text_textbox_split_path)
 
-        split_path = os.path.join(args.output, filename, args.split_output)
+        split_path = os.path.join(project_root/args.output, filename, args.split_output)
         if not os.path.exists(split_path):
             os.makedirs(split_path)
 
-        post_process_split_path = os.path.join(args.output, filename, args.post_procss_split_output)
+        post_process_split_path = os.path.join(project_root/args.output, filename, args.post_procss_split_output)
         if not os.path.exists(post_process_split_path):
             os.makedirs(post_process_split_path)
 
-        image = cv2.imread(image_path)
+        image = cv2.imread(str(project_root/image_path))
         if len(image.shape) == 2 or image.shape[2] == 1:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
         if args.example_format:
-            image = self.rotate_image(args, angle_model, image)
-            image = self.phone_papper_stretch(args, phone_papper_model, image, filename)
-            image = self.ignore_text_detection(args, ignore_model, image, filename)
+            image = self.rotate_image(args, angle_model, image, device)
+            image = self.phone_papper_stretch(args, phone_papper_model, image, filename, device)
+            image = self.ignore_text_detection(args, ignore_model, image, filename, device)
         else:
-            sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename)
+            sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
             image = self.papper_stretch(args, image, sort_textbox_coordinate, filename)
 
-        caret_dict, caret_output = self.caret_detection(args, caret_model, image, output_path, filename)
+        caret_dict, caret_output = self.caret_detection(args, caret_model, image, output_path, filename, device)
 
-        caret_dict = self.caret_mark_detection(args, caret_mark_model, caret_dict, caret_output, output_path)
+        caret_dict = self.caret_mark_detection(args, caret_mark_model, caret_dict, caret_output, output_path, device)
 
-        sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename)
+        sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
 
-        all_text_coordinate = self.text_detection(args, text_model, image, output_path, filename)
+        all_text_coordinate = self.text_detection(args, text_model, image, output_path, filename, device)
 
         text_coordinate, caret_text_coordinate = self.filter_coordinate(all_text_coordinate, caret_dict)
 
-        self.saveResult(args, image_index, image_amount, txt_content, htr_model, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, text_textbox_split_path, split_path, post_process_split_path)
+        post_process_image_path_list = self.saveResult(args, image_index, image_amount, image_path, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, split_path, text_textbox_split_path, post_process_split_path)
 
-        return {'success': True}
+        response = OrderedDict({
+            'success': True,
+            'post_process_image_path_list': post_process_image_path_list
+        })
 
-
+        return response
