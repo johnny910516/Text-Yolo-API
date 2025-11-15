@@ -7,6 +7,7 @@ from collections import OrderedDict
 from pathlib import Path
 import yaml
 from ultralytics import YOLO
+import base64
 
 class HTRYolo():
     def split_txt_by_threshold(self, root, txt_filename ,filename, threshold):
@@ -41,17 +42,20 @@ class HTRYolo():
         with open(output2, "w", encoding="utf-8") as f:
             f.write(part2)
 
+        return part1, part2
+
     def write_txt(self, text, output_path, filename):
-        print(os.path.join(output_path, f'{filename}.txt'))
         with open(os.path.join(output_path, f'{filename}.txt'), 'w', encoding='utf-8') as file:
             file.write(text)
 
-    def htr(self, args, htr_model, htr_image_path, txt_content, device):
-        if len(htr_image_path) == 1:
-            txt_content.append(htr_image_path)
+    def htr(self, args, htr_model, image_base64, txt_content, device):
+        if len(image_base64) == 1:
+            txt_content.append(image_base64)
             return txt_content
 
-        htr_image = cv2.imread(htr_image_path)
+        image_bytes = base64.b64decode(image_base64)
+        image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+        htr_image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
         try:
             predictions = htr_model.predict(
@@ -71,7 +75,6 @@ class HTRYolo():
             print(f"HTR 識別過程中發生錯誤: {e}")
             recognized_text = ''
 
-        # 將結果加進 txt_content[0]
         txt_content.append(recognized_text)
         return txt_content
 
@@ -183,7 +186,7 @@ class HTRYolo():
 
         return parser.parse_args()
     
-    def predict(self, image_amount, image_index, filename, file_ext, post_process_image_path_list, txt_content, device):
+    def predict(self, image_amount, image_index, filename, file_ext, image_base64_list, txt_content, device):
         current_dir = Path(__file__).resolve().parent 
         project_root = current_dir.parents[2]  
         
@@ -201,39 +204,54 @@ class HTRYolo():
         split_path = os.path.join(project_root/args.output, filename, args.split_output)
         if not os.path.exists(split_path):
             os.makedirs(split_path)
-        
-        print(split_path)
 
-        if args.test_mode:
-            average_resolution = self.check_split_word_resolution(split_path)
-            print(average_resolution)
-            if average_resolution > args.resoultion_threshold:
-                for htr_image_path in post_process_image_path_list:
-                    txt_content = self.htr(args, htr_model, htr_image_path, txt_content, device)
-                if image_index == image_amount-1:
-                    print(image_index)
-                    self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
-                
-                if args.high_school_format:
-                    self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
+        try:
+            if args.test_mode:
+                average_resolution = self.check_split_word_resolution(split_path)
+                print(average_resolution)
+                if average_resolution > args.resoultion_threshold:
+                    for image_base64 in image_base64_list:
+                        txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
+                    if image_index == image_amount-1:
+                        self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
+                    
+                    if args.high_school_format:
+                        part1, part2 = self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
+                else:
+                    print(f"-----{filename}{file_ext}-----")
+                    print(f'平均解析度: {average_resolution}')
+                    print("解析度不足!!!")
+                    print("請重新拍攝!!!")
+                    print()
             else:
-                print(f"-----{filename}{file_ext}-----")
-                print(f'平均解析度: {average_resolution}')
-                print("解析度不足!!!")
-                print("請重新拍攝!!!")
-                print()
-        else:
-            for htr_image_path in post_process_image_path_list:
-                txt_content = self.htr(args, htr_model, htr_image_path, txt_content, device)
-            if image_index == image_amount-1:
-                self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
+                for image_base64 in image_base64_list:
+                    txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
+                if image_index == image_amount-1:
+                    self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
 
+                if args.high_school_format:
+                    part1, part2 = self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
+            
             if args.high_school_format:
-                self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
-        
-        response = OrderedDict({
-            'success': True,
-            'txt_content': txt_content
-        })
+                response = OrderedDict({
+                    'success': True,
+                    'txt_content': txt_content,
+                    'part1': part1,
+                    'part2': part2
+                })
+            else:
+                response = OrderedDict({
+                    'success': True,
+                    'txt_content': txt_content,
+                    'part1': None,
+                    'part2': None
+                })
+        except Exception as e:
+            response = OrderedDict({
+                'success': False,
+                'txt_content': None,
+                'part1': None,
+                'part2': None
+            })
 
         return response

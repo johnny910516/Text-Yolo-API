@@ -46,7 +46,7 @@ def main():
     
     # 啟動Split API
     split_api_dir = os.path.join(current_dir, 'Split_API')
-    split_api_success = start_service("Split API", split_api_dir, "app.py", 5003)
+    split_api_success = start_service("Split API", split_api_dir, "app.py", 5001)
     
     # 等待Split API啟動
     if split_api_success:
@@ -55,7 +55,7 @@ def main():
     
     # 啟動HTR API
     htr_api_dir = os.path.join(current_dir, 'Recognize_API')
-    htr_api_success = start_service("Recognize API", htr_api_dir, "app.py", 5004)
+    htr_api_success = start_service("Recognize API", htr_api_dir, "app.py", 5002)
     
     # 等待HTR API啟動
     if htr_api_success:
@@ -65,8 +65,8 @@ def main():
     # 顯示服務狀態
     if split_api_success and htr_api_success:
         print("\nAll services started successfully!")
-        print("Split API running at: http://localhost:5003")
-        print("Recognize API running at: http://localhost:5004")
+        print("Split API running at: http://localhost:5001")
+        print("Recognize API running at: http://localhost:5002")
     else:
         print("\nSome services failed to start. Please check the error messages above.")
 
