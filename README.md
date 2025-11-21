@@ -54,26 +54,22 @@ python test_api.py
 處理稿紙圖片，執行文字檢測，檢測後進行文字排序即加入對應的段落結尾符號。
 
 #### Splot API輸入參數
-- image_base64: 轉換為base64二進制表示的影像
-- image_path: 影像路徑
+- image_base64_list: 轉換為base64二進制表示的影像list
+- image_path_list: 影像路徑list
 - image_amount: 處理影像總數
-- image_index: 準備處理影像的編號(由0開始編號)
-- filename: 影像檔名(包含附檔名)
 - device: 使用cpu或是cuda
 
 split_data = {
-    'image_base64': image_base64,
-    'image_path': image_path,
-    'image_index': image_index,
+    'image_base64_list': image_base64_list,
+    'image_path_list': image_path_list,
     'image_amount': image_amount,
-    'filename': filename,
     'device': str(DEVICE), 
 }
 
 #### Split_API錯誤代碼
 - `0`: 切割成功
 - `1`: 錯誤的API輸入參數
-- `2`: 無影像輸入
+- `2`: 影像取得錯誤
 - `3`: 切割失敗
 - `4`: 未知錯誤
 
@@ -90,28 +86,22 @@ split_response = {
 處理切割文字影像，執行文字辨識。
 
 #### Splot API輸入參數
-- image_base64_list: 排序後並轉換為base64二進制表示的影像的list，且插入對應段落符號
+- image_base64_list: 切割後且轉換為base64二進制表示的影像list
+- image_path_list: 影像路徑list
 - image_amount: 處理影像總數
-- image_index: 準備處理影像的編號(由0開始編號)
-- filename: 影像檔名(包含附檔名)
-- file_ext: 影像副檔名
-- txt_content: 儲存辨識後文字的空list
 - device: 使用cpu或是cuda
 
 recognize_data = {
-    'image_base64_list': split_response.json()['result'],
-    'image_index': image_index,
+    'image_base64_lists': split_response.json()['result'],
+    'image_path_list': image_path_list,
     'image_amount': image_amount,
-    'filename': filename,
-    'file_ext': file_ext,
-    'txt_content': txt_content,
     'device': str(DEVICE)
 }
 
 #### Recognize_API錯誤代碼
 - `0`: 辨識成功
 - `1`: 錯誤的API輸入參數
-- `2`: 無影像輸入
+- `2`: 影像取得錯誤
 - `3`: 辨識失敗
 - `4`: 未知錯誤
 

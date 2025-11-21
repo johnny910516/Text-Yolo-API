@@ -18,33 +18,35 @@ class TextYoloAPI(FlaskView):
                 "message": "No JSON data received"
             })
 
-        image_base64 = data.get('image_base64', '')
-        image_index = int(data.get('image_index', 0))
+        image_base64_list = data.get('image_base64_list', [])
+        image_path_list = data.get('image_path_list', [])
         image_amount = int(data.get('image_amount', 0))
-        filename = data.get('filename', '')
         device = data.get('device', 'cpu')
 
-        image_bytes = base64.b64decode(image_base64)
-        image_array = np.frombuffer(image_bytes, dtype=np.uint8)
-        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        image_list = []
+        for image_base64 in image_base64_list:
+            image_bytes = base64.b64decode(image_base64)
+            image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+            image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+            image_list.append(image)
 
-        if image is None:
+        if len(image_list) != image_amount:
             return jsonify({
                 "error_code": 2,
-                "message": "No image data received",
+                "message": "image data received error",
                 "result": None
             })
 
         predictor = TextYolo()
 
         try:
-            response = predictor.predict(image, image_index, image_amount, filename, device)
+            response = predictor.predict(image_list, image_amount, image_path_list, device)
 
             if response['success']:
                 return jsonify({
                     "error_code": 0,
                     "message": "split success",
-                    "result": response['image_base64_list']
+                    "result": response['response_image_base64_list']
                 })
             else:
                 return jsonify({

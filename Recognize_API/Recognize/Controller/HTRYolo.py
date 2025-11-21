@@ -186,7 +186,8 @@ class HTRYolo():
 
         return parser.parse_args()
     
-    def predict(self, image_amount, image_index, filename, file_ext, image_base64_list, txt_content, device):
+    def predict(self, image_base64_lists, image_amount, image_path_list, device):
+        txt_content = []
         current_dir = Path(__file__).resolve().parent 
         project_root = current_dir.parents[2]  
         
@@ -201,57 +202,62 @@ class HTRYolo():
 
         htr_model = self.load_model(args, project_root)
 
-        split_path = os.path.join(project_root/args.output, filename, args.split_output)
-        if not os.path.exists(split_path):
-            os.makedirs(split_path)
+        for image_index, image_base64_list in enumerate(image_base64_lists):
+            image_path = image_path_list[image_index]
+            filename, file_ext = os.path.splitext(os.path.basename(image_path))
 
-        try:
-            if args.test_mode:
-                average_resolution = self.check_split_word_resolution(split_path)
-                print(average_resolution)
-                if average_resolution > args.resoultion_threshold:
+            split_path = os.path.join(project_root/args.output, filename, args.split_output)
+            if not os.path.exists(split_path):
+                os.makedirs(split_path)
+
+            try:
+                if args.test_mode:
+                    average_resolution = self.check_split_word_resolution(split_path)
+                    print(average_resolution)
+                    if average_resolution > args.resoultion_threshold:
+                        for image_base64 in image_base64_list:
+                            txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
+                        if image_index == image_amount-1:
+                            self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
+                        
+                        if args.high_school_format:
+                            part1, part2 = self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
+                    else:
+                        print(f"-----{filename}{file_ext}-----")
+                        print(f'平均解析度: {average_resolution}')
+                        print("解析度不足!!!")
+                        print("請重新拍攝!!!")
+                        print()
+                else:
                     for image_base64 in image_base64_list:
                         txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
                     if image_index == image_amount-1:
                         self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
-                    
+
                     if args.high_school_format:
                         part1, part2 = self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
-                else:
-                    print(f"-----{filename}{file_ext}-----")
-                    print(f'平均解析度: {average_resolution}')
-                    print("解析度不足!!!")
-                    print("請重新拍攝!!!")
-                    print()
-            else:
-                for image_base64 in image_base64_list:
-                    txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
-                if image_index == image_amount-1:
-                    self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
-
-                if args.high_school_format:
-                    part1, part2 = self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
-            
-            if args.high_school_format:
+                
+            except Exception as e:
                 response = OrderedDict({
-                    'success': True,
-                    'txt_content': txt_content,
-                    'part1': part1,
-                    'part2': part2
-                })
-            else:
-                response = OrderedDict({
-                    'success': True,
-                    'txt_content': txt_content,
+                    'success': False,
+                    'txt_content': None,
                     'part1': None,
                     'part2': None
                 })
-        except Exception as e:
+
+        if args.high_school_format:
             response = OrderedDict({
-                'success': False,
-                'txt_content': None,
+                'success': True,
+                'txt_content': txt_content,
+                'part1': part1,
+                'part2': part2
+            })
+        else:
+            response = OrderedDict({
+                'success': True,
+                'txt_content': txt_content,
                 'part1': None,
                 'part2': None
             })
-
+            
         return response

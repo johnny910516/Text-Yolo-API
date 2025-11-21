@@ -18,24 +18,21 @@ class HTRYoloAPI(FlaskView):
                     "result": None
                 })
 
-            image_base64_list = data.get('image_base64_list', [])
-            image_index = int(data.get('image_index', 0))
+            image_base64_lists = data.get('image_base64_lists', [])
+            image_path_list = data.get('image_path_list', [])
             image_amount = int(data.get('image_amount', 0))
-            filename = data.get('filename', '')
-            file_ext = data.get('file_ext', '')
-            txt_content = data.get('txt_content', '')
             device = data.get('device', 'cpu')
 
-            if len(image_base64_list) == 0:
+            if len(image_base64_lists) != image_amount:
                 return jsonify({
                     "error_code": 2,
-                    "message": "No image data received",
+                    "message": "image data received error",
                     "result": None
                 })
 
             predictor = HTRYolo()
 
-            response = predictor.predict(image_amount, image_index, filename, file_ext, image_base64_list, txt_content, device)
+            response = predictor.predict(image_base64_lists, image_amount, image_path_list, device)
 
             if response['success']:
                 return jsonify({

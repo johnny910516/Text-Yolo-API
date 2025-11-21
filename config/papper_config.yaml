@@ -1,5 +1,5 @@
 column: 22 #直排字數
-row: 38 #橫排字數
+row: 23 #橫排字數
 example format: False #是否為範例影像(example.jpg)相同類型的稿紙
 high school format: False #是否為高中格式作文(聚有問題一及問題二的格式)
 test mode: False #是否開啟測試模式(若開啟會將切割文字平均解析度低於閾值的影像過濾)

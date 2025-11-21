@@ -1105,7 +1105,8 @@ class TextYolo():
 
         return parser.parse_args()
 
-    def predict(self, image, image_index, image_amount, filename, device):
+    def predict(self, image_list, image_amount, image_path_list, device):
+        response_image_base64_list = []
         current_dir = Path(__file__).resolve().parent 
         project_root = current_dir.parents[2]  
 
@@ -1119,56 +1120,62 @@ class TextYolo():
         args.test_mode = data['test mode']
         
         angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, textbox_model = self.load_model(args, project_root)
+        
+        for image_index, image in enumerate(image_list):
+            image_path = image_path_list[image_index]
+            filename, file_ext = os.path.splitext(os.path.basename(image_path))
 
-        output_path = os.path.join(project_root/args.output, filename)
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
+            output_path = os.path.join(project_root/args.output, filename)
+            if not os.path.exists(output_path):
+                os.makedirs(output_path)
 
-        text_textbox_split_path = os.path.join(project_root/args.output, filename, args.text_textbox_split_output)
-        if not os.path.exists(text_textbox_split_path):
-            os.makedirs(text_textbox_split_path)
+            text_textbox_split_path = os.path.join(project_root/args.output, filename, args.text_textbox_split_output)
+            if not os.path.exists(text_textbox_split_path):
+                os.makedirs(text_textbox_split_path)
 
-        split_path = os.path.join(project_root/args.output, filename, args.split_output)
-        if not os.path.exists(split_path):
-            os.makedirs(split_path)
+            split_path = os.path.join(project_root/args.output, filename, args.split_output)
+            if not os.path.exists(split_path):
+                os.makedirs(split_path)
 
-        post_process_split_path = os.path.join(project_root/args.output, filename, args.post_procss_split_output)
-        if not os.path.exists(post_process_split_path):
-            os.makedirs(post_process_split_path)
+            post_process_split_path = os.path.join(project_root/args.output, filename, args.post_procss_split_output)
+            if not os.path.exists(post_process_split_path):
+                os.makedirs(post_process_split_path)
 
-        if len(image.shape) == 2 or image.shape[2] == 1:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+            if len(image.shape) == 2 or image.shape[2] == 1:
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
+            try:
+                if args.example_format:
+                    image = self.rotate_image(args, angle_model, image, device)
+                    image = self.phone_papper_stretch(args, phone_papper_model, image, output_path, filename, device)
+                    image = self.ignore_text_detection(args, ignore_model, image, output_path, filename, device)
+                else:
+                    sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
+                    image = self.papper_stretch(args, image, sort_textbox_coordinate, output_path, filename)
 
-        try:
-            if args.example_format:
-                image = self.rotate_image(args, angle_model, image, device)
-                image = self.phone_papper_stretch(args, phone_papper_model, image, output_path, filename, device)
-                image = self.ignore_text_detection(args, ignore_model, image, output_path, filename, device)
-            else:
+                caret_dict, caret_output = self.caret_detection(args, caret_model, image, output_path, filename, device)
+
+                caret_dict = self.caret_mark_detection(args, caret_mark_model, caret_dict, caret_output, output_path, device)
+
                 sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
-                image = self.papper_stretch(args, image, sort_textbox_coordinate, output_path, filename)
 
-            caret_dict, caret_output = self.caret_detection(args, caret_model, image, output_path, filename, device)
+                all_text_coordinate = self.text_detection(args, text_model, image, output_path, filename, device)
 
-            caret_dict = self.caret_mark_detection(args, caret_mark_model, caret_dict, caret_output, output_path, device)
+                text_coordinate, caret_text_coordinate = self.filter_coordinate(all_text_coordinate, caret_dict)
 
-            sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
+                image_base64_list = self.saveResult(args, image_index, image_amount, filename, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, split_path, text_textbox_split_path, post_process_split_path)
 
-            all_text_coordinate = self.text_detection(args, text_model, image, output_path, filename, device)
+                response_image_base64_list.append(image_base64_list)
 
-            text_coordinate, caret_text_coordinate = self.filter_coordinate(all_text_coordinate, caret_dict)
-
-            image_base64_list = self.saveResult(args, image_index, image_amount, filename, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, split_path, text_textbox_split_path, post_process_split_path)
-
-            response = OrderedDict({
-                'success': True,
-                'image_base64_list': image_base64_list
-            })
-        except Exception as e:
-            response = OrderedDict({
-                'success': False,
-                'image_base64_list': None
-            })
+            except Exception as e:
+                response = OrderedDict({
+                    'success': False,
+                    'response_image_base64_list': None
+                })
+            
+        response = OrderedDict({
+            'success': True,
+            'response_image_base64_list': response_image_base64_list
+        })
 
         return response
