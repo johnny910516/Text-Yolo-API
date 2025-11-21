@@ -76,7 +76,7 @@ class TextYolo():
         txt_content[0] += recognized_text
         return txt_content
 
-    def split_postprocesser(self, image_list, post_process_split_path):
+    def split_postprocesser(self, args, image_list, post_process_split_path):
         index = 0
         image_base64_list = []
 
@@ -114,9 +114,11 @@ class TextYolo():
             final_binary[y_offset:y_offset + h_r, x_offset:x_offset + w_r] = resized_binary
 
             htr_input_img = cv2.cvtColor(final_binary, cv2.COLOR_GRAY2BGR)
-            name = f"{str(index).zfill(4)}"
-            cv2.imwrite(f"{post_process_split_path}/{name}.jpg", htr_input_img)
-            index += 1
+            
+            if args.debug_mode:
+                name = f"{str(index).zfill(4)}"
+                cv2.imwrite(f"{post_process_split_path}/{name}.jpg", htr_input_img)
+                index += 1
 
             _, buffer = cv2.imencode('.png', htr_input_img)  
             image_base64 = base64.b64encode(buffer).decode('utf-8')
@@ -133,7 +135,7 @@ class TextYolo():
         
         return sum(resolution_list) / len(resolution_list)
 
-    def split(self, sort_text_coordinate, image, split_file_path):
+    def split(self, args, sort_text_coordinate, image, split_file_path):
         index = 0
         image_list = []
 
@@ -153,8 +155,9 @@ class TextYolo():
             img_crop = [row[x_min:x_max] for row in image[y_min:y_max]]
             img_crop = Image.fromarray(np.array(img_crop)) 
 
-            name = f"{str(index).zfill(4)}.jpg"
-            img_crop.save(f"{split_file_path}/{name}")
+            if args.debug_mode:
+                name = f"{str(index).zfill(4)}.jpg"
+                img_crop.save(f"{split_file_path}/{name}")
 
             index += 1
             image_list.append(img_crop)
@@ -187,7 +190,7 @@ class TextYolo():
     
         return x_insert_position, y_insert_position
 
-    def search_caret_coordinate_insert_position(self, insert_caret_point_image, new_sort_text_coordinate, caret_dict, insert_caret_point_path):
+    def search_caret_coordinate_insert_position(self, args, insert_caret_point_image, new_sort_text_coordinate, caret_dict, insert_caret_point_path):
         def caret_mark_direction_detection(coordinate_list):
             # 判斷 caret 的方向
             if coordinate_list[1] is not None:
@@ -278,7 +281,8 @@ class TextYolo():
                     insert_index += 1
                     new_sort_text_coordinate.insert(insert_index, caret_text_coordinate)
 
-        cv2.imwrite(insert_caret_point_path, insert_caret_point_image)
+        if args.debug_mode:
+            cv2.imwrite(insert_caret_point_path, insert_caret_point_image)
 
         return new_sort_text_coordinate
     
@@ -656,26 +660,26 @@ class TextYolo():
         for coordinate in text_textbox_coordinates:
             text_textbox_coordinate_list.append([list(pt) for pt in coordinate])
 
-        text_coordinate = self.search_caret_coordinate_insert_position(insert_caret_point_image, new_sort_text_coordinate, caret_dict, insert_caret_point_path)
-        text_textbox_coordinate = self.search_caret_coordinate_insert_position(insert_caret_point_image, text_textbox_coordinate_list, caret_dict, insert_caret_point_path)
+        text_coordinate = self.search_caret_coordinate_insert_position(args, insert_caret_point_image, new_sort_text_coordinate, caret_dict, insert_caret_point_path)
+        text_textbox_coordinate = self.search_caret_coordinate_insert_position(args, insert_caret_point_image, text_textbox_coordinate_list, caret_dict, insert_caret_point_path)
 
         split_image = image.copy()
-        image_list = self.split(text_coordinate, split_image, split_path)
-        _ = self.split(text_textbox_coordinate, split_image, text_textbox_split_path)
+        image_list = self.split(args, text_coordinate, split_image, split_path)
+        _ = self.split(args, text_textbox_coordinate, split_image, text_textbox_split_path)
+        image_base64_list = self.split_postprocesser(args, image_list, post_process_split_path)
 
-        image_base64_list = self.split_postprocesser(image_list, post_process_split_path)
+        if args.debug_mode:
+            for i, poly in enumerate(text_coordinate, 1):
+                if isinstance(poly, str):
+                    continue
+                poly_np = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
+                cv2.polylines(draw_text_image, [poly_np], True, color=(255, 0, 0), thickness=2)
+                if len(poly) > 1:
+                    cv2.putText(draw_text_image, str(i), (poly[1][0] - 3, poly[1][1] + 3), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
+                else:
+                    cv2.putText(draw_text_image, str(i), (poly[0][0], poly[0][1]), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
 
-        for i, poly in enumerate(text_coordinate, 1):
-            if isinstance(poly, str):
-                continue
-            poly_np = np.array(poly, dtype=np.int32).reshape((-1, 1, 2))
-            cv2.polylines(draw_text_image, [poly_np], True, color=(255, 0, 0), thickness=2)
-            if len(poly) > 1:
-                cv2.putText(draw_text_image, str(i), (poly[1][0] - 3, poly[1][1] + 3), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
-            else:
-                cv2.putText(draw_text_image, str(i), (poly[0][0], poly[0][1]), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
-
-        cv2.imwrite(text_path, draw_text_image)
+            cv2.imwrite(text_path, draw_text_image)
 
         return image_base64_list
 
@@ -733,8 +737,9 @@ class TextYolo():
 
             cv2.rectangle(image_np, (x1, y1), (x2, y2), color=(0, 0, 255), thickness=2)
 
-        text_path = os.path.join(output_path, f'{filename}_text.jpg')
-        cv2.imwrite(text_path, image_np)
+        if args.debug_mode:
+            text_path = os.path.join(output_path, f'{filename}_text.jpg')
+            cv2.imwrite(text_path, image_np)
 
         return boxes
     
@@ -780,20 +785,21 @@ class TextYolo():
             cv2.fillPoly(mask, [scaled_polygon_int], 255)
 
             image[mask == 255] = ref_color
-            cv2.imwrite(os.path.join(output_path, "ignore.png"), image)
+            
+            if args.debug_mode:
+                cv2.imwrite(os.path.join(output_path, "ignore.png"), image)
 
         return image
 
-    def caret_mark_detection(self, args, caret_mark_model, caret_dict, caret_output, output_path, device):
-        caret_mark_output = os.path.join(output_path, args.caret_mark_output)
-        if not os.path.exists(caret_mark_output):
-            os.makedirs(caret_mark_output)
+    def caret_mark_detection(self, args, caret_mark_model, caret_dict, caret_image_dict, output_path, device):
+        if args.debug_mode:
+            caret_mark_output = os.path.join(output_path, args.caret_mark_output)
+            if not os.path.exists(caret_mark_output):
+                os.makedirs(caret_mark_output)
 
-        image_paths = self.load_image_path(caret_output)
-
-        for i, image_path in enumerate(image_paths):
-            filename, file_ext = os.path.splitext(os.path.basename(image_path))
-            image = cv2.imread(image_path)
+        for idx, (key, value) in enumerate(caret_image_dict.items()):
+            filename = key
+            image = value
             draw_image = image.copy()
 
             results = caret_mark_model(image, imgsz=args.caret_mark_size, device=device, verbose=False, max_det=1)
@@ -805,7 +811,7 @@ class TextYolo():
                     xyxy = box.xyxy[0].cpu().numpy().astype(int)
                     x1, y1, x2, y2 = xyxy
 
-                    caret_top_left_coordinate = caret_dict[os.path.basename(image_path)][0][0] 
+                    caret_top_left_coordinate = caret_dict[filename][0][0] 
 
                     caret_mark_coordinate = [
                         [x1 + caret_top_left_coordinate[0], y1 + caret_top_left_coordinate[1]],
@@ -814,29 +820,32 @@ class TextYolo():
                         [x1 + caret_top_left_coordinate[0], y2 + caret_top_left_coordinate[1]]
                     ]
 
-                    caret_dict[os.path.basename(image_path)].append(caret_mark_coordinate)
+                    caret_dict[filename].append(caret_mark_coordinate)
 
                     cv2.rectangle(draw_image, (x1, y1), (x2, y2), color=(0, 0, 255), thickness=2)
 
-                caret_path = os.path.join(caret_mark_output, f'{filename}.jpg')
-                cv2.imwrite(caret_path, draw_image)
+                if args.debug_mode:
+                    caret_path = os.path.join(caret_mark_output, f'{filename}.jpg')
+                    cv2.imwrite(caret_path, draw_image)
             else:
-                del caret_dict[os.path.basename(image_path)]
+                del caret_dict[filename]
 
         return caret_dict
 
     def caret_detection(self, args, caret_model, image, output_path, filename, device):
         caret_output = os.path.join(output_path, args.caret_output)
-        if not os.path.exists(caret_output):
-            os.makedirs(caret_output)
 
-        image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        if args.debug_mode:
+            if not os.path.exists(caret_output):
+                os.makedirs(caret_output)
+
         draw_image = image.copy()
 
         results = caret_model(image, imgsz=args.caret_size, device=device, verbose=False, max_det=2000)
 
         caret_coordinate = []
         caret_dict = {}
+        caret_image_dict = {}
         result = results[0]
 
         for i, box in enumerate(result.boxes):
@@ -847,16 +856,20 @@ class TextYolo():
             caret_coordinate.append(coords)
             caret_dict[f'image{i}.jpg'] = [coords]
 
-            crop_caret_path = os.path.join(caret_output, f'image{i}.jpg')
             crop_caret = image[y1:y2, x1:x2]
-            cv2.imwrite(crop_caret_path, crop_caret)
+            caret_image_dict[f'image{i}.jpg'] = crop_caret
+
+            if args.debug_mode:
+                crop_caret_path = os.path.join(caret_output, f'image{i}.jpg')
+                cv2.imwrite(crop_caret_path, crop_caret)
 
             cv2.rectangle(draw_image, (x1, y1), (x2, y2), color=(0, 0, 255), thickness=2)
 
-        caret_path = os.path.join(output_path, f'{filename}_caret.jpg')
-        cv2.imwrite(caret_path, draw_image)
+        if args.debug_mode:
+            caret_path = os.path.join(output_path, f'{filename}_caret.jpg')
+            cv2.imwrite(caret_path, draw_image)
 
-        return caret_dict, caret_output
+        return caret_dict, caret_image_dict
     
     def papper_stretch(self, args, image, sort_textbox_coordinate, output_path, filename):
         W, H = image.shape[1], image.shape[0]
@@ -894,8 +907,9 @@ class TextYolo():
 
         warped = cv2.warpPerspective(image, M, (W, H))
 
-        output_path = os.path.join(args.output, filename, f'{filename}_wrap.jpg')
-        cv2.imwrite(output_path, warped)
+        if args.debug_mode:
+            output_path = os.path.join(args.output, filename, f'{filename}_wrap.jpg')
+            cv2.imwrite(output_path, warped)
 
         return warped
     
@@ -915,22 +929,21 @@ class TextYolo():
 
         sort_textbox_coordinate = self.sort_textbox(args, boxes)
 
-        for i, poly in enumerate(sort_textbox_coordinate, 1):
+        if args.debug_mode:
+            for i, poly in enumerate(sort_textbox_coordinate, 1):
 
-            poly_pts = np.array(poly, dtype=np.int32).reshape(-1, 2)
-            poly_draw = poly_pts.reshape((-1, 1, 2))
-            cv2.polylines(image_np, [poly_draw], isClosed=True, color=(0, 0, 255), thickness=2)
+                poly_pts = np.array(poly, dtype=np.int32).reshape(-1, 2)
+                poly_draw = poly_pts.reshape((-1, 1, 2))
+                cv2.polylines(image_np, [poly_draw], isClosed=True, color=(0, 0, 255), thickness=2)
 
-            if len(poly_pts) > 1:
-                x, y = int(poly_pts[1][0]) - 3, int(poly_pts[1][1]) + 3
-            else:
-                x, y = int(poly_pts[0][0]), int(poly_pts[0][1])
-            cv2.putText(image_np, str(i), (x, y), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
+                if len(poly_pts) > 1:
+                    x, y = int(poly_pts[1][0]) - 3, int(poly_pts[1][1]) + 3
+                else:
+                    x, y = int(poly_pts[0][0]), int(poly_pts[0][1])
+                cv2.putText(image_np, str(i), (x, y), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
 
-        text_path = os.path.join(output_path, f'{filename}_textbox.jpg')
-        cv2.imwrite(text_path, image_np)
-
-        return sort_textbox_coordinate
+            text_path = os.path.join(output_path, f'{filename}_textbox.jpg')
+            cv2.imwrite(text_path, image_np)
 
         return sort_textbox_coordinate
 
@@ -969,7 +982,8 @@ class TextYolo():
         mask = masks[0]
         mask = cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
         mask = (mask > 0.5).astype(np.uint8) * 255
-        cv2.imwrite(os.path.join(output_path, "mask.png"), mask)
+        if args.debug_mode:
+            cv2.imwrite(os.path.join(output_path, "mask.png"), mask)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -1006,8 +1020,9 @@ class TextYolo():
             cv2.circle(vis, pt, 5, (0, 0, 255), -1)
             cv2.putText(vis, f"P{i+1}", pt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
-        cv2.imwrite(os.path.join(output_path, "box.png"), vis)
-        cv2.imwrite(os.path.join(output_path, "warped.png"), warped)
+        if args.debug_mode:
+            cv2.imwrite(os.path.join(output_path, "box.png"), vis)
+            cv2.imwrite(os.path.join(output_path, "warped.png"), warped)
 
         return warped
 
@@ -1118,6 +1133,7 @@ class TextYolo():
         args.example_format = data['example format']
         args.high_school_format = data['high school format']
         args.test_mode = data['test mode']
+        args.debug_mode = data['debug_mode']
         
         angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, textbox_model = self.load_model(args, project_root)
         
@@ -1125,21 +1141,23 @@ class TextYolo():
             image_path = image_path_list[image_index]
             filename, file_ext = os.path.splitext(os.path.basename(image_path))
 
+            output_root = os.path.join(project_root, args.output)
             output_path = os.path.join(project_root/args.output, filename)
-            if not os.path.exists(output_path):
-                os.makedirs(output_path)
-
             text_textbox_split_path = os.path.join(project_root/args.output, filename, args.text_textbox_split_output)
-            if not os.path.exists(text_textbox_split_path):
-                os.makedirs(text_textbox_split_path)
-
             split_path = os.path.join(project_root/args.output, filename, args.split_output)
-            if not os.path.exists(split_path):
-                os.makedirs(split_path)
-
             post_process_split_path = os.path.join(project_root/args.output, filename, args.post_procss_split_output)
-            if not os.path.exists(post_process_split_path):
-                os.makedirs(post_process_split_path)
+            
+            if args.debug_mode:
+                if not os.path.exists(output_root):
+                    os.makedirs(output_root)
+                if not os.path.exists(output_path):
+                    os.makedirs(output_path)
+                if not os.path.exists(text_textbox_split_path):
+                    os.makedirs(text_textbox_split_path)
+                if not os.path.exists(split_path):
+                    os.makedirs(split_path)
+                if not os.path.exists(post_process_split_path):
+                    os.makedirs(post_process_split_path)
 
             if len(image.shape) == 2 or image.shape[2] == 1:
                 image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
@@ -1153,9 +1171,9 @@ class TextYolo():
                     sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
                     image = self.papper_stretch(args, image, sort_textbox_coordinate, output_path, filename)
 
-                caret_dict, caret_output = self.caret_detection(args, caret_model, image, output_path, filename, device)
+                caret_dict, caret_image_dict = self.caret_detection(args, caret_model, image, output_path, filename, device)
 
-                caret_dict = self.caret_mark_detection(args, caret_mark_model, caret_dict, caret_output, output_path, device)
+                caret_dict = self.caret_mark_detection(args, caret_mark_model, caret_dict, caret_image_dict, output_path, device)
 
                 sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
 

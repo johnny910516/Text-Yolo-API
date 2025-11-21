@@ -4,6 +4,7 @@ import requests
 import shutil
 import numpy as np
 import base64
+import time
 
 import torch
 
@@ -42,6 +43,7 @@ if __name__ == '__main__':
         'device': str(DEVICE)
     }
 
+    total_start = time.time() 
     split_response = requests.post("http://localhost:5001/split", json=split_data)
 
     if split_response.json()['error_code'] == 0:
@@ -67,3 +69,5 @@ if __name__ == '__main__':
     else:
         print(f'{split_response.json()['message']}, error_code: {split_response.json()['error_code']}')
 
+    total_end = time.time() 
+    print(f"程式總執行時間: {total_end - total_start:.3f} 秒")

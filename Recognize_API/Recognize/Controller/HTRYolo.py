@@ -10,7 +10,7 @@ from ultralytics import YOLO
 import base64
 
 class HTRYolo():
-    def split_txt_by_threshold(self, root, txt_filename ,filename, threshold):
+    def split_txt_by_threshold(self, args, root, txt_filename ,filename, threshold):
         input_file = os.path.join(root, txt_filename)
 
         with open(input_file, "r", encoding="utf-8") as f:
@@ -37,10 +37,11 @@ class HTRYolo():
             part1 = "##".join(parts[:split_index + 1]).strip() + "**"
             part2 = "##".join(parts[split_index + 1:]).lstrip("\n")
 
-        with open(output1, "w", encoding="utf-8") as f:
-            f.write(part1)
-        with open(output2, "w", encoding="utf-8") as f:
-            f.write(part2)
+        if args.debug_mode:
+            with open(output1, "w", encoding="utf-8") as f:
+                f.write(part1)
+            with open(output2, "w", encoding="utf-8") as f:
+                f.write(part2)
 
         return part1, part2
 
@@ -199,6 +200,7 @@ class HTRYolo():
         args.example_format = data['example format']
         args.high_school_format = data['high school format']
         args.test_mode = data['test mode']
+        args.debug_mode = data['debug_mode']
 
         htr_model = self.load_model(args, project_root)
 
@@ -207,8 +209,10 @@ class HTRYolo():
             filename, file_ext = os.path.splitext(os.path.basename(image_path))
 
             split_path = os.path.join(project_root/args.output, filename, args.split_output)
-            if not os.path.exists(split_path):
-                os.makedirs(split_path)
+
+            if args.debug_mode:
+                if not os.path.exists(split_path):
+                    os.makedirs(split_path)
 
             try:
                 if args.test_mode:
@@ -217,11 +221,11 @@ class HTRYolo():
                     if average_resolution > args.resoultion_threshold:
                         for image_base64 in image_base64_list:
                             txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
-                        if image_index == image_amount-1:
+                        if image_index == image_amount-1 and args.debug_mode:
                             self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
                         
                         if args.high_school_format:
-                            part1, part2 = self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
+                            part1, part2 = self.split_txt_by_threshold(args, str(project_root/args.output), 'recongnize.txt', filename, args.column)
                     else:
                         print(f"-----{filename}{file_ext}-----")
                         print(f'平均解析度: {average_resolution}')
@@ -231,11 +235,11 @@ class HTRYolo():
                 else:
                     for image_base64 in image_base64_list:
                         txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
-                    if image_index == image_amount-1:
+                    if image_index == image_amount-1 and args.debug_mode:
                         self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
 
                     if args.high_school_format:
-                        part1, part2 = self.split_txt_by_threshold(str(project_root/args.output), 'recongnize.txt', filename, args.column)
+                        part1, part2 = self.split_txt_by_threshold(args, str(project_root/args.output), 'recongnize.txt', filename, args.column)
                 
             except Exception as e:
                 response = OrderedDict({

@@ -1,8 +1,6 @@
 from Recognize import app
 from flask import request, jsonify
 from flask_classful import FlaskView, route
-from collections import OrderedDict
-import os
 
 from Recognize.Controller.HTRYolo import HTRYolo
 

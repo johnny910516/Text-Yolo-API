@@ -1,7 +1,6 @@
 from Split import app
 from flask import request, jsonify
 from flask_classful import FlaskView, route
-from collections import OrderedDict
 import base64
 import cv2
 import numpy as np
