@@ -24,7 +24,7 @@ class HTRYoloAPI(FlaskView):
             if len(image_base64_lists) != image_amount:
                 return jsonify({
                     "error_code": 2,
-                    "message": "image data received error",
+                    "message": "empty content!!!",
                     "result": None
                 })
 

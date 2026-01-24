@@ -37,11 +37,10 @@ class HTRYolo():
             part1 = "##".join(parts[:split_index + 1]).strip() + "**"
             part2 = "##".join(parts[split_index + 1:]).lstrip("\n")
 
-        if args.debug_mode:
-            with open(output1, "w", encoding="utf-8") as f:
-                f.write(part1)
-            with open(output2, "w", encoding="utf-8") as f:
-                f.write(part2)
+        with open(output1, "w", encoding="utf-8") as f:
+            f.write(part1)
+        with open(output2, "w", encoding="utf-8") as f:
+            f.write(part2)
 
         return part1, part2
 
@@ -217,11 +216,10 @@ class HTRYolo():
             try:
                 if args.test_mode:
                     average_resolution = self.check_split_word_resolution(split_path)
-                    print(average_resolution)
                     if average_resolution > args.resoultion_threshold:
                         for image_base64 in image_base64_list:
                             txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
-                        if image_index == image_amount-1 and args.debug_mode:
+                        if image_index == image_amount-1: 
                             self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
                         
                         if args.high_school_format:
@@ -235,11 +233,11 @@ class HTRYolo():
                 else:
                     for image_base64 in image_base64_list:
                         txt_content = self.htr(args, htr_model, image_base64, txt_content, device)
-                    if image_index == image_amount-1 and args.debug_mode:
-                        self.write_txt(''.join(txt_content), str(project_root/args.output), 'recongnize')
+                    if image_index == image_amount-1: 
+                        self.write_txt(''.join(txt_content), str(project_root/args.output), f'{filename}')
 
                     if args.high_school_format:
-                        part1, part2 = self.split_txt_by_threshold(args, str(project_root/args.output), 'recongnize.txt', filename, args.column)
+                        part1, part2 = self.split_txt_by_threshold(args, str(project_root/args.output), f'{filename}.txt', filename, args.column)
                 
             except Exception as e:
                 response = OrderedDict({

@@ -14,6 +14,7 @@ import yaml
 from pathlib import Path
 import math
 import base64
+import re
 
 class TextYolo():    
     def split_txt_by_threshold(self, input_file, threshold):
@@ -84,6 +85,7 @@ class TextYolo():
             if isinstance(pil_image, str):
                 image_base64_list.append(pil_image)
                 continue
+
             image = np.array(pil_image)
             gray_img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if len(image.shape) == 3 else image
             _, binary_img = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -125,15 +127,38 @@ class TextYolo():
             image_base64_list.append(image_base64)
 
         return image_base64_list
+    
+    def process_image(self, image, center_size=48):
+        """檢查圖片中心區域的非黑像素比例"""
+        print(type(image))
+        image = np.array(image)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        _, binary = cv2.threshold(gray, 20, 255, cv2.THRESH_BINARY)
+        height, width = binary.shape
+        half = center_size // 2
+        center_region = binary[
+                        max(0, height // 2 - half):min(height, height // 2 + half),
+                        max(0, width // 2 - half):min(width, width // 2 + half)
+                        ]
+        total_pixels = center_region.size
+        non_black_pixels = cv2.countNonZero(center_region)
+        percentage = (non_black_pixels / total_pixels) * 100
 
-    def check_split_word_resolution(self, image_list):
-        resolution_list = []
-        for image in image_list:
-            if isinstance(image, str):
-                continue
-            resolution_list.append(max(image.width, image.height))
-        
-        return sum(resolution_list) / len(resolution_list)
+        return percentage
+    
+    def detect_img_white(self, image, coordinate):
+        xs = [pt[0] for pt in coordinate]
+        ys = [pt[1] for pt in coordinate]
+
+        x_min, x_max = min(xs), max(xs)
+        y_min, y_max = min(ys), max(ys)
+
+        # NumPy 影像 slicing：image[y, x]
+        crop = image[y_min:y_max, x_min:x_max]
+
+        percentage = self.process_image(crop)
+
+        return coordinate if percentage < 99 else None
 
     def split(self, args, sort_text_coordinate, image, split_file_path):
         index = 0
@@ -151,6 +176,9 @@ class TextYolo():
             y_values = [pt[1] for pt in coordinate]
             x_min, x_max = min(x_values), max(x_values)
             y_min, y_max = min(y_values), max(y_values)
+
+            if x_min == x_max or y_min == y_max:
+                continue
 
             img_crop = [row[x_min:x_max] for row in image[y_min:y_max]]
             img_crop = Image.fromarray(np.array(img_crop)) 
@@ -639,6 +667,7 @@ class TextYolo():
         return sort_text_coordinate
 
     def saveResult(self, args, image_index, image_amount, filename, image, sort_textbox_coordinate, text_coordinate, caret_dict, output_path, split_path, text_textbox_split_path, post_process_split_path):
+        image = np.array(image)
         draw_text_image = image.copy()
         insert_caret_point_image = image.copy()
 
@@ -649,6 +678,15 @@ class TextYolo():
         for coordinate in text_coordinate:
             text_coordinates_list.append([list(pt) for pt in coordinate])
 
+        if args.noise:
+            fliter_text_coordinate_list = []
+            for coordinate in text_coordinates_list:
+                coordinate = self.detect_img_white(image, coordinate)
+                if coordinate is not None:
+                    fliter_text_coordinate_list.append(coordinate)
+
+            text_coordinates_list = fliter_text_coordinate_list
+            
         sort_text_coordinate = self.sort_text(args, sort_textbox_coordinate, text_coordinates_list)
 
         if args.high_school_format:
@@ -665,6 +703,7 @@ class TextYolo():
 
         split_image = image.copy()
         image_list = self.split(args, text_coordinate, split_image, split_path)
+        print(text_textbox_coordinate[0], text_textbox_coordinate[1])
         _ = self.split(args, text_textbox_coordinate, split_image, text_textbox_split_path)
         image_base64_list = self.split_postprocesser(args, image_list, post_process_split_path)
 
@@ -908,10 +947,139 @@ class TextYolo():
         warped = cv2.warpPerspective(image, M, (W, H))
 
         if args.debug_mode:
-            output_path = os.path.join(args.output, filename, f'{filename}_wrap.jpg')
+            output_path = os.path.join(output_path, f'{filename}_wrap.jpg')
             cv2.imwrite(output_path, warped)
 
         return warped
+    
+    def get_island_distance(self, island_a, island_b):
+        min_dist = float('inf')
+        
+        centers_a = [np.mean(np.array(box), axis=0) for box in island_a]
+        centers_b = [np.mean(np.array(box), axis=0) for box in island_b]
+        
+        centers_a = np.array(centers_a)
+        centers_b = np.array(centers_b)
+        
+        dists = np.linalg.norm(centers_a[:, None] - centers_b, axis=2)
+        
+        return np.min(dists)
+
+    def merge_islands_to_target(self, boxes, target_count, strict_threshold_ratio=1.0, max_merge_ratio=3.0):
+        if not boxes:
+            return []
+        
+        n = len(boxes)
+        if n < 2: return boxes
+
+        centers = []
+        diagonal_lengths = []
+        for box in boxes:
+            box_np = np.array(box)
+            centers.append(np.mean(box_np, axis=0))
+            w = np.max(box_np[:, 0]) - np.min(box_np[:, 0])
+            h = np.max(box_np[:, 1]) - np.min(box_np[:, 1])
+            diagonal_lengths.append(np.sqrt(w**2 + h**2))
+
+        avg_diagonal = np.mean(diagonal_lengths)
+        strict_threshold = avg_diagonal * strict_threshold_ratio
+        stop_threshold = avg_diagonal * max_merge_ratio
+
+        adj = {i: [] for i in range(n)}
+        for i in range(n):
+            for j in range(i + 1, n):
+                dist = np.linalg.norm(centers[i] - centers[j])
+                if dist < strict_threshold:
+                    adj[i].append(j)
+                    adj[j].append(i)
+
+        visited = set()
+        all_islands = []
+        
+        for i in range(n):
+            if i not in visited:
+                current_indices = []
+                queue = [i]
+                visited.add(i)
+                while queue:
+                    node = queue.pop(0)
+                    current_indices.append(node)
+                    for neighbor in adj[node]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+                
+                island_boxes = [boxes[idx] for idx in current_indices]
+                all_islands.append(island_boxes)
+
+        print(len(all_islands))
+
+        if not all_islands: return boxes
+
+        all_islands.sort(key=len, reverse=True)
+        main_island = all_islands[0]
+        candidate_islands = all_islands[1:]
+
+        while len(main_island) < target_count and len(candidate_islands) > 0:
+            best_dist = float('inf')
+            best_island_idx = -1
+            
+            for i, island in enumerate(candidate_islands):
+                dist = self.get_island_distance(main_island, island)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_island_idx = i
+            
+            if best_dist > stop_threshold:
+                break
+                
+            if len(main_island) + len(candidate_islands[best_island_idx]) > target_count:
+                candidate_islands.pop(best_island_idx)
+                continue
+
+            main_island.extend(candidate_islands[best_island_idx])
+            
+            candidate_islands.pop(best_island_idx)
+
+        return main_island
+    
+    def stretch_textbox_detection(self, args, empty_model, image, output_path, filename, device):
+        boxes = []
+        image = image.copy()
+        image_np = np.array(image) 
+
+        results = empty_model(image_np, imgsz=args.textbox_size, max_det=2000, iou=0.4, device=device, verbose=False)
+        
+        result = results[0]
+        for box in result.boxes:
+            xyxy = box.xyxy[0].cpu().numpy().astype(int)
+            x1, y1, x2, y2 = xyxy
+
+            boxes.append([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+
+        target_grid_count = args.column * args.row
+
+        boxes = self.merge_islands_to_target(boxes, target_grid_count, strict_threshold_ratio=1.0, max_merge_ratio=2.0)
+
+        sort_textbox_coordinate = self.sort_textbox(args, boxes)
+
+        if args.debug_mode:
+            for i, poly in enumerate(sort_textbox_coordinate, 1):
+
+                poly_pts = np.array(poly, dtype=np.int32).reshape(-1, 2)
+                poly_draw = poly_pts.reshape((-1, 1, 2))
+                cv2.polylines(image_np, [poly_draw], isClosed=True, color=(0, 0, 255), thickness=2)
+
+                if len(poly_pts) > 1:
+                    x, y = int(poly_pts[1][0]) - 3, int(poly_pts[1][1]) + 3
+                else:
+                    x, y = int(poly_pts[0][0]), int(poly_pts[0][1])
+                cv2.putText(image_np, str(i), (x, y), fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 0), thickness=2)
+
+            text_path = os.path.join(output_path, f'{filename}_stretch_textbox.jpg')
+            cv2.imwrite(text_path, image_np)
+
+        return sort_textbox_coordinate
     
     def textbox_detection(self, args, empty_model, image, output_path, filename, device):
         boxes = []
@@ -1134,6 +1302,7 @@ class TextYolo():
         args.high_school_format = data['high school format']
         args.test_mode = data['test mode']
         args.debug_mode = data['debug_mode']
+        args.noise = data['noise']
         
         angle_model, phone_papper_model, caret_model, caret_mark_model, ignore_model, text_model, textbox_model = self.load_model(args, project_root)
         
@@ -1168,7 +1337,7 @@ class TextYolo():
                     image = self.phone_papper_stretch(args, phone_papper_model, image, output_path, filename, device)
                     image = self.ignore_text_detection(args, ignore_model, image, output_path, filename, device)
                 else:
-                    sort_textbox_coordinate = self.textbox_detection(args, textbox_model, image, output_path, filename, device)
+                    sort_textbox_coordinate = self.stretch_textbox_detection(args, textbox_model, image, output_path, filename, device)
                     image = self.papper_stretch(args, image, sort_textbox_coordinate, output_path, filename)
 
                 caret_dict, caret_image_dict = self.caret_detection(args, caret_model, image, output_path, filename, device)
