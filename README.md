@@ -3,7 +3,10 @@ Tetx Yolo API的Web API服務，稿紙文字檢測、文字辨識功能。
 
 ## 安裝與設置
 
-### 1. 創建虛擬環境
+### 1. 下載模型權重
+https://drive.google.com/file/d/1azR4Bcu9AjTSZ5WfkovQ9JY8pM38CYIA/view?usp=sharing
+
+### 2. 創建虛擬環境
 python version: 3.12.4
 ```bash
 python -m venv Tetx_Yolo_API
@@ -12,16 +15,16 @@ python -m venv Tetx_Yolo_API
 Tetx_Yolo_API\Scripts\activate
 ```
 
-### 2. 安裝依賴
+### 3. 安裝依賴
 ```bash
 pip3 install --pre torch torchvision torchaudio --inde`x-url https://download.pytorch.org/whl/nightly/cu128
 pip install -r requirements.txt
 ```
 
-### 3. 配置稿紙參數檔案
+### 4. 配置稿紙參數檔案
 ./config/papper_config.yaml
 
-### 4. 啟動API服務
+### 5. 啟動API服務
 ```bash
 cd Tetx Yolo API
 ```
@@ -29,7 +32,7 @@ cd Tetx Yolo API
 python start_api.py
 ```
 
-### 5. 測試API
+### 6. 測試API
 ```bash
 python test_api.py
 ```
